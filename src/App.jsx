@@ -1,6 +1,42 @@
 import { useMemo, useState } from 'react'
 import { catalog } from './catalog.js'
 
+// Simplified brand marks drawn inline so the static site needs no external
+// image hosts (and keeps working offline). Each is a recognizable glyph, not
+// the full trademarked wordmark.
+const ICONS = {
+  netflix: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#E50914" d="M6 2h3.5l5 12.5V2H18v20l-3.5-1-5-12.5V21L6 22z" />
+    </svg>
+  ),
+  prime: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#00A8E1" d="M8 5v10l9-5z" />
+      <path fill="none" stroke="#00A8E1" strokeWidth="1.8" strokeLinecap="round" d="M4 18.5c5.5 3 10.5 3 16-.5" />
+      <path fill="none" stroke="#00A8E1" strokeWidth="1.8" strokeLinecap="round" d="M18.5 16.5l1.8.4-.5 1.8" />
+    </svg>
+  ),
+  hulu: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#1CE783" d="M5 2h3.4v6.4c.6-.2 1.3-.4 2.2-.4H14c2.8 0 4.4 1.7 4.4 4.3V22H15v-8.9c0-1-.6-1.7-1.6-1.7h-3.4c-1 0-1.6.7-1.6 1.7V22H5z" />
+    </svg>
+  ),
+  youtube: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect fill="#FF0000" x="2" y="5" width="20" height="14" rx="4" />
+      <path fill="#fff" d="M10 9l6 3-6 3z" />
+    </svg>
+  ),
+  youtubetv: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect fill="none" stroke="#FF0000" strokeWidth="1.8" x="2" y="4.5" width="20" height="13" rx="3" />
+      <path fill="#FF0000" d="M10 8l5.5 3L10 14z" />
+      <path stroke="#FF0000" strokeWidth="1.8" strokeLinecap="round" d="M8 20.5h8" />
+    </svg>
+  ),
+}
+
 const TYPES = [
   { key: 'all', label: 'All' },
   { key: 'movie', label: 'Movies' },
@@ -14,13 +50,38 @@ const TYPES = [
 // catalog inside this app, so we link out instead of pretending to embed it.
 // `url(q)` returns the destination for the current query (or the service home
 // when the box is empty).
+// `login` is the service's own sign-in page, used by the "connect" flow below.
 const SERVICES = [
-  { key: 'netflix', label: 'Netflix', url: (q) => q ? `https://www.netflix.com/search?q=${q}` : 'https://www.netflix.com/' },
-  { key: 'prime', label: 'Prime Video', url: (q) => q ? `https://www.amazon.com/gp/video/search?phrase=${q}` : 'https://www.amazon.com/gp/video/storefront' },
-  { key: 'hulu', label: 'Hulu', url: (q) => q ? `https://www.hulu.com/search?q=${q}` : 'https://www.hulu.com/' },
-  { key: 'youtube', label: 'YouTube', url: (q) => q ? `https://www.youtube.com/results?search_query=${q}` : 'https://www.youtube.com/' },
-  { key: 'youtubetv', label: 'YouTube TV', url: (q) => q ? `https://tv.youtube.com/search/${q}` : 'https://tv.youtube.com/' },
+  { key: 'netflix', label: 'Netflix', login: 'https://www.netflix.com/login', url: (q) => q ? `https://www.netflix.com/search?q=${q}` : 'https://www.netflix.com/' },
+  { key: 'prime', label: 'Prime Video', login: 'https://www.amazon.com/gp/sign-in.html', url: (q) => q ? `https://www.amazon.com/gp/video/search?phrase=${q}` : 'https://www.amazon.com/gp/video/storefront' },
+  { key: 'hulu', label: 'Hulu', login: 'https://auth.hulu.com/web/login', url: (q) => q ? `https://www.hulu.com/search?q=${q}` : 'https://www.hulu.com/' },
+  { key: 'youtube', label: 'YouTube', login: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F', url: (q) => q ? `https://www.youtube.com/results?search_query=${q}` : 'https://www.youtube.com/' },
+  { key: 'youtubetv', label: 'YouTube TV', login: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Ftv.youtube.com%2F', url: (q) => q ? `https://tv.youtube.com/search/${q}` : 'https://tv.youtube.com/' },
 ]
+
+// "Connecting" a service means: open its own sign-in page in a new tab (the
+// user authenticates on the service directly — a static site can't and
+// shouldn't handle their credentials), then remember the pairing in
+// localStorage so this browser shows the service as connected. It's a local
+// convenience marker; we cannot verify the cross-origin session from here.
+const CONNECTED_KEY = 'stream.connectedServices'
+
+function loadConnected() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CONNECTED_KEY))
+    return new Set(Array.isArray(raw) ? raw : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveConnected(set) {
+  try {
+    localStorage.setItem(CONNECTED_KEY, JSON.stringify([...set]))
+  } catch {
+    /* private mode / storage disabled — pairing just won't persist */
+  }
+}
 
 // Validate a pasted "play this URL" input. We only accept a direct http(s)
 // link to a media file (or an HLS playlist). magnet: / torrent links are
@@ -71,6 +132,21 @@ export default function App() {
   const [type, setType] = useState('all')
   const [urlInput, setUrlInput] = useState('')
   const [urlError, setUrlError] = useState('')
+  const [connected, setConnected] = useState(loadConnected)
+
+  function toggleConnect(service) {
+    setConnected((prev) => {
+      const next = new Set(prev)
+      if (next.has(service.key)) {
+        next.delete(service.key) // disconnect = just forget the local pairing
+      } else {
+        next.add(service.key)
+        window.open(service.login, '_blank', 'noopener,noreferrer')
+      }
+      saveConnected(next)
+      return next
+    })
+  }
 
   function playUrl(e) {
     e.preventDefault()
@@ -117,17 +193,33 @@ export default function App() {
         </div>
         <nav className="services" aria-label="Search on streaming services">
           <span className="services-label">Search on:</span>
-          {SERVICES.map((s) => (
-            <a
-              key={s.key}
-              className="service"
-              href={s.url(encodeURIComponent(query.trim()))}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {s.label}
-            </a>
-          ))}
+          {SERVICES.map((s) => {
+            const isConnected = connected.has(s.key)
+            return (
+              <span key={s.key} className={`service-group${isConnected ? ' service-connected' : ''}`}>
+                <a
+                  className="service"
+                  href={s.url(encodeURIComponent(query.trim()))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="service-icon">{ICONS[s.key]}</span>
+                  {s.label}
+                  {isConnected && <span className="service-dot" title="Connected on this browser" aria-label="Connected" />}
+                </a>
+                <button
+                  type="button"
+                  className="service-connect"
+                  onClick={() => toggleConnect(s)}
+                  title={isConnected
+                    ? `Forget ${s.label} pairing on this browser`
+                    : `Sign in to ${s.label} (opens its sign-in page) and pair it on this browser`}
+                >
+                  {isConnected ? 'Connected ✓' : 'Connect'}
+                </button>
+              </span>
+            )
+          })}
         </nav>
         <form className="url-bar" onSubmit={playUrl}>
           <input

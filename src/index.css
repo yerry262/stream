@@ -84,21 +84,68 @@ body {
   font-size: 0.85rem;
 }
 
-.service {
+.service-group {
+  display: inline-flex;
+  align-items: stretch;
   border: 1px solid #2a2a36;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.service-group:hover { border-color: #4b4bff; }
+
+.service-connected { border-color: #1f7a4d; }
+
+.service {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   background: #14141c;
   color: #d8d8e0;
   padding: 0.4rem 0.8rem;
-  border-radius: 8px;
   font-size: 0.85rem;
   text-decoration: none;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
-.service:hover {
-  border-color: #4b4bff;
-  color: #fff;
+.service:hover { color: #fff; }
+
+.service-icon {
+  display: inline-flex;
+  width: 1.1em;
+  height: 1.1em;
 }
+
+.service-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.service-dot {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: #2ecc71;
+}
+
+.service-connect {
+  border: none;
+  border-left: 1px solid #2a2a36;
+  background: #10101a;
+  color: #7a7a88;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.service-connect:hover {
+  color: #fff;
+  background: #1a1a26;
+}
+
+.service-connected .service-connect { color: #2ecc71; }
 
 .url-bar {
   flex: 1 1 100%;
