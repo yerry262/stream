@@ -14,12 +14,90 @@ body {
 .topbar {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid #1e1e26;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  background: #0b0b0f;
+  z-index: 5;
 }
 
 .topbar h1 {
   margin: 0;
   font-size: 1.4rem;
   letter-spacing: 0.02em;
+}
+
+.search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #2a2a36;
+  background: #14141c;
+  color: #f2f2f5;
+  font-size: 0.95rem;
+}
+
+.search:focus {
+  outline: none;
+  border-color: #4b4bff;
+}
+
+.chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid #2a2a36;
+  background: #14141c;
+  color: #b5b5c0;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chip:hover { color: #f2f2f5; }
+
+.chip-active {
+  background: #4b4bff;
+  border-color: #4b4bff;
+  color: #fff;
+}
+
+.services {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.services-label {
+  color: #7a7a88;
+  font-size: 0.85rem;
+}
+
+.service {
+  border: 1px solid #2a2a36;
+  background: #14141c;
+  color: #d8d8e0;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.service:hover {
+  border-color: #4b4bff;
+  color: #fff;
 }
 
 .grid {
@@ -76,14 +154,29 @@ body {
   padding: 1rem;
 }
 
-.player video {
+.player video,
+.player .yt {
   width: 100%;
   border-radius: 8px;
   background: #000;
 }
 
+.player .yt {
+  aspect-ratio: 16 / 9;
+  border: none;
+}
+
 .player h2 { margin: 0.75rem 0 0.25rem; }
 .player p { margin: 0; color: #b5b5c0; }
+
+.year { color: #7a7a88; font-weight: 400; }
+
+.empty {
+  grid-column: 1 / -1;
+  color: #b5b5c0;
+  padding: 2rem 0;
+  text-align: center;
+}
 
 .close {
   position: absolute;

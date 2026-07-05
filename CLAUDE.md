@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## What this is
 
-`stream` is a static content-streaming web app: users browse a poster grid and click a title to play it in an overlay video player. Built with **Vite + React**, deployed as a static site to **GitHub Pages** via GitHub Actions.
+`stream` is a static content-streaming web app: users browse a poster grid and click a title to play it in an overlay video player. Built with **Vite + React**, deployed as a static site to **GitHub Pages** via GitHub Actions. Live at https://yerry262.github.io/stream/.
 
 ## Commands
 
@@ -17,7 +17,9 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 - `index.html` — Vite entry, mounts `#root`
 - `src/main.jsx` — React root
-- `src/App.jsx` — the whole UI: catalog grid + click-to-play overlay `<video>`
+- `src/App.jsx` — the whole UI: search box + type filter chips, a "Search on:" row of deep links to streaming services, catalog grid, click-to-play overlay. Search matches title/description/year/genres; filtering is pure client-side over the in-memory catalog.
+  - **Service deep links** (`SERVICES`): Netflix/Prime/Hulu/YouTube/YouTube TV buttons that open each service's own search for the current query in a new tab. They link out — there is no legal way to authenticate and play a paid service's DRM'd catalog inside this app, so we hand off to the service's licensed player rather than embedding it.
+  - **Inline YouTube**: a catalog entry with a `youtubeId` plays inline via YouTube's embed (`youtube-nocookie.com/embed`) instead of the `<video>` element. YouTube is the only listed service that permits embedded playback.
 - `src/catalog.js` — the content list (single source of truth for titles/videos)
 - `src/index.css` — all styling (dark theme, no CSS framework)
 - `.github/workflows/deploy.yml` — build + deploy to Pages on push to `main`
@@ -25,6 +27,8 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## Conventions & gotchas
 
 - **Base path**: `vite.config.js` sets `base: '/stream/'` so assets resolve under `yerry262.github.io/stream/`. If the repo is renamed or moved to a custom domain, update this.
-- **Adding content**: edit `src/catalog.js` only — the UI renders whatever is in that array. No backend.
+- **Adding content**: edit `src/catalog.js` only — the UI renders whatever is in that array. No backend. Each entry is `{ id, title, description, poster, src, year, type, genres }`, plus an optional `youtubeId` (when set, the title plays inline via YouTube embed instead of `src`). `poster` is an image URL, `src` is any browser-playable video URL (mp4/HLS), `type` is `'movie' | 'series' | 'home'` (drives the filter chips), and `genres` is a string array (also searchable).
+- **Licensing**: only add content you have the right to distribute — your own home videos, or public-domain / Creative Commons work. Do not point `src` at copyrighted films/TV you aren't licensed for.
+- **Range-request streaming**: to load only the part being watched (seek without full download), host `src` files somewhere that honors HTTP range requests — S3/R2/Backblaze/nginx do; **GitHub Pages does not**. The `<video>` element (with `preload="metadata"`) handles byte-range seeking automatically once the host cooperates.
 - **Deploy source**: GitHub Pages must be set to "GitHub Actions" (Settings → Pages), not a branch.
 - Purely client-side; there is no server, database, or auth.
