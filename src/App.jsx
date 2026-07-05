@@ -22,6 +22,42 @@ const SERVICES = [
   { key: 'youtubetv', label: 'YouTube TV', url: (q) => q ? `https://tv.youtube.com/search/${q}` : 'https://tv.youtube.com/' },
 ]
 
+// Validate a pasted "play this URL" input. We only accept a direct http(s)
+// link to a media file (or an HLS playlist). magnet: / torrent links are
+// rejected outright — playing those requires a torrent client that fetches and
+// reshares the swarm, which this app deliberately does not do. Returns an
+// { item } to play, or an { error } string to show the user.
+const MEDIA_EXT = /\.(mp4|m4v|webm|ogg|ogv|mov|m3u8)(\?.*)?$/i
+function parseUrlInput(raw) {
+  const value = raw.trim()
+  if (!value) return { error: 'Paste a direct video URL.' }
+  if (/^magnet:/i.test(value) || /\.torrent(\?.*)?$/i.test(value)) {
+    return { error: 'Magnet and torrent links are not supported — paste a direct video file URL instead.' }
+  }
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    return { error: 'That does not look like a valid URL.' }
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { error: 'Only http(s) links to a video file are supported.' }
+  }
+  if (!MEDIA_EXT.test(url.pathname)) {
+    return { error: 'Link must point to a video file (.mp4, .webm, .m3u8, …).' }
+  }
+  const name = decodeURIComponent(url.pathname.split('/').pop() || 'Pasted video')
+  return {
+    item: {
+      id: `url:${value}`,
+      title: name,
+      description: value,
+      src: value,
+      type: 'home',
+    },
+  }
+}
+
 // Everything a title should match against when someone types in the search box.
 function haystack(item) {
   return [item.title, item.description, item.year, ...(item.genres || [])]
@@ -33,6 +69,19 @@ export default function App() {
   const [active, setActive] = useState(null)
   const [query, setQuery] = useState('')
   const [type, setType] = useState('all')
+  const [urlInput, setUrlInput] = useState('')
+  const [urlError, setUrlError] = useState('')
+
+  function playUrl(e) {
+    e.preventDefault()
+    const { item, error } = parseUrlInput(urlInput)
+    if (error) {
+      setUrlError(error)
+      return
+    }
+    setUrlError('')
+    setActive(item)
+  }
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -80,6 +129,19 @@ export default function App() {
             </a>
           ))}
         </nav>
+        <form className="url-bar" onSubmit={playUrl}>
+          <input
+            className="url-input"
+            type="url"
+            inputMode="url"
+            placeholder="Paste a direct video URL to play (.mp4, .webm, .m3u8)…"
+            value={urlInput}
+            onChange={(e) => { setUrlInput(e.target.value); if (urlError) setUrlError('') }}
+            aria-label="Play a video from a URL"
+          />
+          <button className="url-play" type="submit">Play URL</button>
+          {urlError && <span className="url-error" role="alert">{urlError}</span>}
+        </form>
       </header>
 
       {active && (

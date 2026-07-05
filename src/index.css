@@ -100,6 +100,48 @@ body {
   color: #fff;
 }
 
+.url-bar {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.url-input {
+  flex: 1 1 260px;
+  min-width: 200px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #2a2a36;
+  background: #14141c;
+  color: #f2f2f5;
+  font-size: 0.9rem;
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: #4b4bff;
+}
+
+.url-play {
+  border: 1px solid #4b4bff;
+  background: #4b4bff;
+  color: #fff;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.url-play:hover { background: #3a3aff; }
+
+.url-error {
+  flex: 1 1 100%;
+  color: #ff8080;
+  font-size: 0.85rem;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
