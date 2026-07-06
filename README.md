@@ -1,6 +1,6 @@
 # Stream
 
-A static content-streaming web app (browse a catalog, click to watch) built with Vite + React and deployed to GitHub Pages via GitHub Actions.
+A static content-streaming web app built with Vite + React and deployed to GitHub Pages via GitHub Actions. Browse a local catalog and click to watch, or search for any movie/TV title — results come from public databases (iTunes, TVMaze) with trailers where available and "Watch on Netflix / Prime Video / Hulu / YouTube / YouTube TV" deep links that hand off to each service's own player.
 
 **Live:** https://yerry262.github.io/stream/
 

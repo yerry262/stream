@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { catalog } from './catalog.js'
+import { searchEverywhere } from './universalSearch.js'
 
 // Simplified brand marks drawn inline so the static site needs no external
 // image hosts (and keeps working offline). Each is a recognizable glyph, not
@@ -133,6 +134,11 @@ export default function App() {
   const [urlInput, setUrlInput] = useState('')
   const [urlError, setUrlError] = useState('')
   const [connected, setConnected] = useState(loadConnected)
+  // Universal search: results from public catalogs (iTunes movies, TVMaze TV)
+  // for anything not in the local library, plus the item whose "where to
+  // watch" panel is open.
+  const [external, setExternal] = useState({ status: 'idle', results: [] })
+  const [detail, setDetail] = useState(null)
 
   function toggleConnect(service) {
     setConnected((prev) => {
@@ -159,6 +165,30 @@ export default function App() {
     setActive(item)
   }
 
+  // Debounced universal search: wait for typing to settle, then query the
+  // public catalogs. AbortController + cleanup ignores stale responses.
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setExternal({ status: 'idle', results: [] })
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      setExternal((prev) => ({ ...prev, status: 'loading' }))
+      try {
+        const { results, allFailed } = await searchEverywhere(q, controller.signal)
+        setExternal({ status: allFailed ? 'error' : 'done', results })
+      } catch (err) {
+        if (err.name !== 'AbortError') setExternal({ status: 'error', results: [] })
+      }
+    }, 400)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [query])
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     return catalog.filter((item) => {
@@ -167,6 +197,16 @@ export default function App() {
       return matchesType && matchesQuery
     })
   }, [query, type])
+
+  // External hits honor the type chips too ('home' videos can only be local),
+  // and anything already in the library is dropped to avoid duplicate cards.
+  const externalShown = useMemo(() => {
+    if (type === 'home') return []
+    const localTitles = new Set(catalog.map((i) => i.title.toLowerCase()))
+    return external.results.filter(
+      (item) => (type === 'all' || item.type === type) && !localTitles.has(item.title.toLowerCase()),
+    )
+  }, [external.results, type])
 
   return (
     <div className="app">
@@ -272,18 +312,90 @@ export default function App() {
         </div>
       )}
 
-      <main className="grid">
-        {results.map((item) => (
-          <button key={item.id} className="card" onClick={() => setActive(item)}>
-            <img src={item.poster} alt={item.title} loading="lazy" />
-            <span className="card-title">
-              {item.title}
-              {item.year ? <span className="year"> · {item.year}</span> : null}
-            </span>
-          </button>
-        ))}
-        {results.length === 0 && (
-          <p className="empty">No titles match “{query}”.</p>
+      {detail && (
+        <div className="player-overlay" onClick={() => setDetail(null)}>
+          <div className="player detail" onClick={(e) => e.stopPropagation()}>
+            <button className="close" onClick={() => setDetail(null)}>✕</button>
+            {detail.previewUrl ? (
+              <video src={detail.previewUrl} poster={detail.poster || undefined} controls autoPlay preload="metadata" />
+            ) : detail.poster ? (
+              <img className="detail-poster" src={detail.poster} alt={detail.title} />
+            ) : null}
+            <h2>
+              {detail.title}
+              {detail.year ? <span className="year"> · {detail.year}</span> : null}
+            </h2>
+            {detail.genres?.length > 0 && (
+              <p className="detail-genres">{detail.genres.join(' · ')}</p>
+            )}
+            <p>{detail.overview || 'No description available.'}</p>
+            <div className="detail-watch">
+              <span className="services-label">Watch on:</span>
+              {SERVICES.map((s) => (
+                <a
+                  key={s.key}
+                  className="service"
+                  href={s.url(encodeURIComponent(detail.title))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="service-icon">{ICONS[s.key]}</span>
+                  {s.label}
+                  {connected.has(s.key) && <span className="service-dot" title="Connected on this browser" aria-label="Connected" />}
+                </a>
+              ))}
+            </div>
+            {detail.previewUrl && (
+              <p className="detail-note">Playing the free preview clip — pick a service above for the full title.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <main>
+        {externalShown.length > 0 && <h2 className="section-title">Your library</h2>}
+        <div className="grid">
+          {results.map((item) => (
+            <button key={item.id} className="card" onClick={() => setActive(item)}>
+              <img src={item.poster} alt={item.title} loading="lazy" />
+              <span className="card-title">
+                {item.title}
+                {item.year ? <span className="year"> · {item.year}</span> : null}
+              </span>
+            </button>
+          ))}
+          {results.length === 0 && externalShown.length === 0 && external.status !== 'loading' && (
+            <p className="empty">No titles match “{query}”.</p>
+          )}
+        </div>
+
+        {external.status === 'loading' && (
+          <p className="external-status">Searching everywhere…</p>
+        )}
+        {external.status === 'error' && (
+          <p className="external-status">Couldn’t reach the movie/TV databases — check your connection.</p>
+        )}
+        {externalShown.length > 0 && (
+          <>
+            <h2 className="section-title">Found everywhere</h2>
+            <p className="section-hint">From public movie &amp; TV databases — pick a title to see where to watch it.</p>
+            <div className="grid">
+              {externalShown.map((item) => (
+                <button key={item.id} className="card" onClick={() => setDetail(item)}>
+                  {item.poster ? (
+                    <img src={item.poster} alt={item.title} loading="lazy" />
+                  ) : (
+                    <span className="card-noposter" aria-hidden="true">🎬</span>
+                  )}
+                  <span className={`card-badge card-badge-${item.type}`}>{item.type === 'movie' ? 'Movie' : 'TV'}</span>
+                  <span className="card-title">
+                    {item.title}
+                    {item.year ? <span className="year"> · {item.year}</span> : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </main>
     </div>
