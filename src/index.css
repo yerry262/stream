@@ -361,3 +361,49 @@ body {
   font-size: 0.85rem;
   color: #7a7a88 !important;
 }
+
+/* --- Torrent streaming & seeding --- */
+
+.torrent-stats {
+  margin: 0.5rem 0 0 !important;
+  font-size: 0.85rem;
+  color: #7a7a88 !important;
+}
+
+.torrent-error { color: #ff6b6b !important; }
+
+.seed-list {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.seed-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #2a2a36;
+  border-radius: 8px;
+  background: #14141c;
+}
+
+.seed-name {
+  border: none;
+  background: none;
+  color: #8ab4ff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seed-stats {
+  color: #7a7a88;
+  font-size: 0.8rem;
+}

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { catalog } from './catalog.js'
 import { searchEverywhere } from './universalSearch.js'
+import { streamTorrent, seedFiles } from './torrent.js'
 
 // Simplified brand marks drawn inline so the static site needs no external
 // image hosts (and keeps working offline). Each is a recognizable glyph, not
@@ -84,17 +85,28 @@ function saveConnected(set) {
   }
 }
 
-// Validate a pasted "play this URL" input. We only accept a direct http(s)
-// link to a media file (or an HLS playlist). magnet: / torrent links are
-// rejected outright — playing those requires a torrent client that fetches and
-// reshares the swarm, which this app deliberately does not do. Returns an
-// { item } to play, or an { error } string to show the user.
-const MEDIA_EXT = /\.(mp4|m4v|webm|ogg|ogv|mov|m3u8)(\?.*)?$/i
+// Validate a pasted "play this" input. Accepts a direct http(s) link to a
+// media file (or HLS playlist), or a magnet: link — magnets stream in-browser
+// through the WebTorrent client in src/torrent.js. Returns an { item } to
+// play, or an { error } string to show the user.
+const MEDIA_EXT = /\.(mp4|m4v|webm|ogg|ogv|mov|m3u8|mp3|m4a|m4b|aac|flac|wav|oga|opus)(\?.*)?$/i
 function parseUrlInput(raw) {
   const value = raw.trim()
-  if (!value) return { error: 'Paste a direct video URL.' }
-  if (/^magnet:/i.test(value) || /\.torrent(\?.*)?$/i.test(value)) {
-    return { error: 'Magnet and torrent links are not supported — paste a direct video file URL instead.' }
+  if (!value) return { error: 'Paste a direct video URL or a magnet link.' }
+  if (/^magnet:/i.test(value)) {
+    const name = /[?&]dn=([^&]+)/.exec(value)
+    return {
+      item: {
+        id: `torrent:${value}`,
+        title: name ? decodeURIComponent(name[1].replace(/\+/g, ' ')) : 'Torrent stream',
+        description: 'Streaming from peers via WebTorrent.',
+        torrent: value,
+        type: 'home',
+      },
+    }
+  }
+  if (/\.torrent(\?.*)?$/i.test(value)) {
+    return { error: 'For a .torrent file, download it and use "Open .torrent" below.' }
   }
   let url
   try {
@@ -120,6 +132,60 @@ function parseUrlInput(raw) {
   }
 }
 
+function fmtBytes(n) {
+  if (!n) return '0 B'
+  const units = ['B', 'kB', 'MB', 'GB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log2(n) / 10))
+  return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`
+}
+
+// Plays a magnet link or .torrent file in-browser via WebTorrent: pieces are
+// fetched from WebRTC peers and streamed into the <video>. The torrent is
+// destroyed when the player closes unless this tab is also seeding it.
+function TorrentPlayer({ input }) {
+  const videoRef = useRef(null)
+  const [error, setError] = useState('')
+  const [stats, setStats] = useState(null)
+
+  useEffect(() => {
+    let torrent = null
+    let timer = null
+    let closed = false
+    streamTorrent(input, videoRef.current, setError).then((t) => {
+      if (closed) {
+        if (!t.__shared) t.destroy()
+        return
+      }
+      torrent = t
+      timer = setInterval(() => {
+        setStats({ peers: t.numPeers, progress: t.progress, speed: t.downloadSpeed })
+      }, 1000)
+    }, (err) => setError(err?.message || 'Could not start the torrent.'))
+    return () => {
+      closed = true
+      if (timer) clearInterval(timer)
+      if (torrent && !torrent.__shared) torrent.destroy()
+    }
+  }, [input])
+
+  return (
+    <>
+      <video ref={videoRef} controls playsInline preload="metadata" />
+      {error ? (
+        <p className="torrent-stats torrent-error" role="alert">{error}</p>
+      ) : (
+        <p className="torrent-stats">
+          {!stats
+            ? 'Connecting to peers…'
+            : stats.progress >= 1
+              ? `Downloaded · seeding back to ${stats.peers} peer${stats.peers === 1 ? '' : 's'}`
+              : `${stats.peers} peer${stats.peers === 1 ? '' : 's'} · ${Math.round(stats.progress * 100)}% · ${fmtBytes(stats.speed)}/s`}
+        </p>
+      )}
+    </>
+  )
+}
+
 // Everything a title should match against when someone types in the search box.
 function haystack(item) {
   return [item.title, item.description, item.year, ...(item.genres || [])]
@@ -139,6 +205,63 @@ export default function App() {
   // watch" panel is open.
   const [external, setExternal] = useState({ status: 'idle', results: [] })
   const [detail, setDetail] = useState(null)
+  // Torrents this tab is seeding (live WebTorrent objects) — they keep
+  // uploading to peers for as long as the tab stays open.
+  const [seeds, setSeeds] = useState([])
+  const [seedError, setSeedError] = useState('')
+  const [seedBusy, setSeedBusy] = useState(false)
+  const [copiedMagnet, setCopiedMagnet] = useState('')
+  const [, setSeedTick] = useState(0) // re-render to refresh live seed stats
+  const torrentFileRef = useRef(null)
+  const seedFileRef = useRef(null)
+
+  useEffect(() => {
+    if (seeds.length === 0) return
+    const timer = setInterval(() => setSeedTick((t) => t + 1), 2000)
+    return () => clearInterval(timer)
+  }, [seeds.length])
+
+  function openTorrentFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setUrlError('')
+    setActive({
+      id: `torrent-file:${file.name}`,
+      title: file.name.replace(/\.torrent$/i, ''),
+      description: 'Streaming from peers via WebTorrent.',
+      torrent: file,
+      type: 'home',
+    })
+  }
+
+  async function seedVideo(e) {
+    const files = [...(e.target.files || [])]
+    e.target.value = ''
+    if (files.length === 0) return
+    setSeedError('')
+    setSeedBusy(true)
+    try {
+      const torrent = await seedFiles(files)
+      setSeeds((prev) => [...prev, torrent])
+    } catch (err) {
+      setSeedError(err?.message || 'Could not start seeding.')
+    } finally {
+      setSeedBusy(false)
+    }
+  }
+
+  function copyMagnet(torrent) {
+    navigator.clipboard?.writeText(torrent.magnetURI).then(() => {
+      setCopiedMagnet(torrent.infoHash)
+      setTimeout(() => setCopiedMagnet(''), 2000)
+    })
+  }
+
+  function stopSeeding(torrent) {
+    torrent.destroy()
+    setSeeds((prev) => prev.filter((t) => t !== torrent))
+  }
 
   function toggleConnect(service) {
     setConnected((prev) => {
@@ -264,23 +387,84 @@ export default function App() {
         <form className="url-bar" onSubmit={playUrl}>
           <input
             className="url-input"
-            type="url"
+            type="text"
             inputMode="url"
-            placeholder="Paste a direct video URL to play (.mp4, .webm, .m3u8)…"
+            placeholder="Paste a video URL (.mp4, .m3u8) or a magnet link…"
             value={urlInput}
             onChange={(e) => { setUrlInput(e.target.value); if (urlError) setUrlError('') }}
-            aria-label="Play a video from a URL"
+            aria-label="Play a video from a URL or magnet link"
           />
-          <button className="url-play" type="submit">Play URL</button>
+          <button className="url-play" type="submit">Play</button>
+          <button
+            className="url-play"
+            type="button"
+            onClick={() => torrentFileRef.current?.click()}
+            title="Open a downloaded .torrent file and stream its video from peers"
+          >
+            Open .torrent
+          </button>
+          <input
+            ref={torrentFileRef}
+            type="file"
+            accept=".torrent,application/x-bittorrent"
+            hidden
+            onChange={openTorrentFile}
+          />
+          <button
+            className="url-play"
+            type="button"
+            disabled={seedBusy}
+            onClick={() => seedFileRef.current?.click()}
+            title="Share a video or audio file you own: this tab seeds it to peers and gives you a magnet link"
+          >
+            {seedBusy ? 'Hashing…' : 'Seed a file'}
+          </button>
+          <input
+            ref={seedFileRef}
+            type="file"
+            accept="video/*,audio/*,.mp4,.m4v,.webm,.mov,.mkv,.mp3,.m4a,.flac,.wav,.ogg,.opus"
+            hidden
+            onChange={seedVideo}
+          />
           {urlError && <span className="url-error" role="alert">{urlError}</span>}
+          {seedError && <span className="url-error" role="alert">{seedError}</span>}
         </form>
+        {seeds.length > 0 && (
+          <div className="seed-list">
+            <span className="services-label">Seeding (keep this tab open):</span>
+            {seeds.map((t) => (
+              <span key={t.infoHash} className="seed-item">
+                <button
+                  className="seed-name"
+                  title="Play this torrent"
+                  onClick={() => setActive({
+                    id: `torrent:${t.magnetURI}`,
+                    title: t.name,
+                    description: 'Streaming from peers via WebTorrent.',
+                    torrent: t.magnetURI,
+                    type: 'home',
+                  })}
+                >
+                  {t.name}
+                </button>
+                <span className="seed-stats">{t.numPeers} peer{t.numPeers === 1 ? '' : 's'} · ↑ {fmtBytes(t.uploaded)}</span>
+                <button className="service-connect" onClick={() => copyMagnet(t)}>
+                  {copiedMagnet === t.infoHash ? 'Copied ✓' : 'Copy magnet'}
+                </button>
+                <button className="service-connect" onClick={() => stopSeeding(t)}>Stop</button>
+              </span>
+            ))}
+          </div>
+        )}
       </header>
 
       {active && (
         <div className="player-overlay" onClick={() => setActive(null)}>
           <div className="player" onClick={(e) => e.stopPropagation()}>
             <button className="close" onClick={() => setActive(null)}>✕</button>
-            {active.youtubeId ? (
+            {active.torrent ? (
+              <TorrentPlayer input={active.torrent} />
+            ) : active.youtubeId ? (
               /* YouTube is the one service that permits embedded playback, via
                  its IFrame player — so a YouTube-backed entry plays inline here
                  legally, no API key needed. */
