@@ -203,7 +203,7 @@ export default function App() {
   // Universal search: results from public catalogs (iTunes movies, TVMaze TV)
   // for anything not in the local library, plus the item whose "where to
   // watch" panel is open.
-  const [external, setExternal] = useState({ status: 'idle', results: [] })
+  const [external, setExternal] = useState({ status: 'idle', results: [], q: '' })
   const [detail, setDetail] = useState(null)
   // Torrents this tab is seeding (live WebTorrent objects) — they keep
   // uploading to peers for as long as the tab stays open.
@@ -290,27 +290,31 @@ export default function App() {
 
   // Debounced universal search: wait for typing to settle, then query the
   // public catalogs. AbortController + cleanup ignores stale responses.
+  // Results are tagged with the query they answer (`q`); render code treats
+  // anything tagged with a different query as still loading — that way the
+  // effect never has to reset state synchronously.
+  const q = query.trim()
   useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) {
-      setExternal({ status: 'idle', results: [] })
-      return
-    }
+    if (q.length < 2) return
     const controller = new AbortController()
     const timer = setTimeout(async () => {
-      setExternal((prev) => ({ ...prev, status: 'loading' }))
       try {
         const { results, allFailed } = await searchEverywhere(q, controller.signal)
-        setExternal({ status: allFailed ? 'error' : 'done', results })
+        setExternal({ status: allFailed ? 'error' : 'done', results, q })
       } catch (err) {
-        if (err.name !== 'AbortError') setExternal({ status: 'error', results: [] })
+        if (err.name !== 'AbortError') setExternal({ status: 'error', results: [], q })
       }
     }, 400)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [query])
+  }, [q])
+
+  // The universal-search UI is live once the query is long enough; until the
+  // in-flight fetch for the *current* query lands, it's in the loading state.
+  const externalActive = q.length >= 2
+  const externalReady = externalActive && external.q === q
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -324,12 +328,12 @@ export default function App() {
   // External hits honor the type chips too ('home' videos can only be local),
   // and anything already in the library is dropped to avoid duplicate cards.
   const externalShown = useMemo(() => {
-    if (type === 'home') return []
+    if (!externalReady || type === 'home') return []
     const localTitles = new Set(catalog.map((i) => i.title.toLowerCase()))
     return external.results.filter(
       (item) => (type === 'all' || item.type === type) && !localTitles.has(item.title.toLowerCase()),
     )
-  }, [external.results, type])
+  }, [externalReady, external.results, type])
 
   return (
     <div className="app">
@@ -548,15 +552,15 @@ export default function App() {
               </span>
             </button>
           ))}
-          {results.length === 0 && externalShown.length === 0 && external.status !== 'loading' && (
+          {results.length === 0 && externalShown.length === 0 && (!externalActive || externalReady) && (
             <p className="empty">No titles match “{query}”.</p>
           )}
         </div>
 
-        {external.status === 'loading' && (
+        {externalActive && !externalReady && (
           <p className="external-status">Searching everywhere…</p>
         )}
-        {external.status === 'error' && (
+        {externalReady && external.status === 'error' && (
           <p className="external-status">Couldn’t reach the movie/TV databases — check your connection.</p>
         )}
         {externalShown.length > 0 && (
