@@ -21,6 +21,4 @@ Edit `src/catalog.js` — each entry needs an `id`, `title`, `description`, `pos
 
 Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds the site and publishes `dist/` to GitHub Pages.
 
-**One-time setup:** in the repo on GitHub, go to **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**.
-
 The Vite `base` in `vite.config.js` is set to `/stream/` to match the repo name; change it if you rename the repo or use a custom domain.
